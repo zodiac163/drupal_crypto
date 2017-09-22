@@ -1,0 +1,7 @@
+name = Custom_it_cryptonator
+description = Cryptocurrency over cryptonator.com
+package = Custom_it
+core = 7.x
+version = «7.x-1.0»
+configure = admin/config/content/custom_it_cryptonator
+files[]= custom_it_cryptonator.module

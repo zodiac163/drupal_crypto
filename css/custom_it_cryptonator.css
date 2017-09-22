@@ -1,0 +1,122 @@
+#edit-commerce-payment-payment-details-crypto-curr {
+	margin-left: 20px;
+	width: 33%;
+    display: block;
+    float: left;
+}
+
+#return_exchange {
+	width: 45%;
+    display: block;
+    float: left;
+}
+
+#edit-commerce-payment-payment-details-crypto-curr input.form-radio {
+	margin-top: 9px!important;	
+}
+
+.form-item-commerce-payment-payment-details-crypto-curr {
+	height: 35px;
+}
+
+.form-item-commerce-payment-payment-details-crypto-curr .ajax-progress-throbber {
+	top: 7px!important;
+    position: relative!important;
+}
+
+#edit-commerce-payment-payment-details-crypto-curr label {
+	float: left;
+}
+
+#edit-commerce-payment-payment-details-crypto-curr label:before {
+	background-size: 30px 30px;
+	background-repeat: no-repeat;
+	display: inline-block;
+	content:"";
+	height: 30px;
+    width: 30px;
+}
+
+#edit-commerce-payment-payment-details-crypto-curr label div {
+	position: relative;
+    top: -8px;
+	display: inline-block;
+	left: 6px;
+    font-weight: bold;
+}
+
+[for="edit-commerce-payment-payment-details-crypto-curr-btc"]:before {
+	background: url(../images/btc.png);	
+}
+
+[for="edit-commerce-payment-payment-details-crypto-curr-blk"]:before {
+	background: url(../images/blackcoin.png);	
+}
+
+[for="edit-commerce-payment-payment-details-crypto-curr-dash"]:before {
+	background: url(../images/dashcoin.png);	
+}
+
+[for="edit-commerce-payment-payment-details-crypto-curr-doge"]:before {
+	background: url(../images/dogecoin.png);	
+}
+
+[for="edit-commerce-payment-payment-details-crypto-curr-emc"]:before {
+	background: url(../images/emercoin.png);	
+}
+
+[for="edit-commerce-payment-payment-details-crypto-curr-ltc"]:before {
+	background: url(../images/litecoin.png);	
+}
+
+[for="edit-commerce-payment-payment-details-crypto-curr-ppc"]:before {
+	background: url(../images/peercoin.png);	
+}
+
+#payment-details .alert-info {
+    color: #31708f;
+    background-color: #d9edf7;
+    border-color: #bce8f1;
+}
+
+#payment-details .alert {
+    padding: 15px;
+    margin-bottom: 20px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}
+
+#payment-details .row {
+    margin-right: -15px;
+    margin-left: -15px;
+}
+
+#payment-details .text-right {
+    text-align: right;
+}
+
+#payment-details .col-xs-12 {
+    width: 40%;
+}
+
+#payment-details .col-xs-12 {
+    float: left;
+}
+
+#payment-details .col-md-6 {
+		float: left;
+	}
+
+#payment-details .col-md-6 {
+    position: relative;
+    min-height: 1px;    
+    padding-left: 15px;
+}
+
+#payment-details .lead {
+    margin-bottom: 20px;
+    font-size: 16px;
+    font-weight: 300;
+    line-height: 1.4;
+	margin-top: 0!important;
+}

@@ -1,0 +1,368 @@
+<?php
+
+//ini_set('display_errors', 1);
+//ini_set('display_startup_errors', 1);
+//error_reporting(E_ALL);
+
+require_once __DIR__ . '/MerchantAPI.php';
+
+/**
+ * Implements hook_menu().
+ */
+function custom_it_cryptonator_menu() {
+	$items['crypto/pay'] = array(
+		'title' => t('Notification from cryptonator'),
+		'page callback' => 'custom_it_cryptonator_pay',
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK,
+	);
+	$items['crypto/success'] = array(
+		'title' => t('Successful payment'),
+		'page callback' => 'custom_it_cryptonator_success',
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK,
+	);
+	$items['crypto/fail'] = array(
+		'title' => t('Failed payment'),
+		'page callback' => 'custom_it_cryptonator_fail',
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK,
+	 );
+	
+	return $items;
+}
+
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function custom_it_cryptonator_commerce_payment_method_info() { 
+	
+	return array(		
+		'cryptonator' => array(
+			'base' => 'custom_it_cryptonator',			
+			'title' => t('Crypto currency'),			
+			'display_title' => t('Crypto currency'),			
+			'description' => t('7 types of crypto currency'),			
+			'active' => FALSE,			
+			'terminal' => FALSE,			
+			'offsite' => TRUE,			
+			'offsite_autoredirect' => TRUE,			
+		),
+	);
+}
+
+/**
+ * Payment method callback: settings form.
+ */
+function custom_it_cryptonator_settings_form($settings = NULL) {
+	$form = array();
+		$settings = (array)$settings + array(
+		'merchant_id' => '',
+		'secret' => '',
+		'lang' => '',
+		'currency' => '',
+	);
+
+	$form['merchant_id'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Merchant ID'),
+		'#default_value' => $settings['merchant_id'],
+	);
+
+	$form['secret'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Secret'),
+		'#default_value' => $settings['secret'],
+	);
+	
+	$form['lang'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Language'),
+		'#default_value' => $settings['lang'],		
+		'#description' => t('Language of the checkout page'),
+	);
+	
+	$form['currency'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Language'),
+		'#default_value' => $settings['currency'],		
+		'#description' => t('Currency in the cyptonator code, to obtain the exchange rate'),
+	);
+
+	return $form;
+}
+
+/**
+ * Payment method callback: submit form.
+ */
+function custom_it_cryptonator_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+	$form = array();
+	$pane_values += array('name' => 'crypto');
+	$procent = 15;
+	
+	$form['crypto_curr'] = array(
+		'#type' => 'radios',		
+		'#default_value' => (isset($_SESSION['crypto_curr']) ? $_SESSION['crypto_curr'] : 'btc'),
+		'#options' => array(			
+			'btc' => t('<div>BTC</div>'),
+			'blk' => t('<div>BLK</div>'),
+			'dash' => t('<div>DASH</div>'),
+			'doge' => t('<div>DOGE</div>'),
+			'emc' => t('<div>EMC</div>'),
+			'ltc' => t('<div>LTC</div>'),
+			'ppc' => t('<div>PPC</div>'),
+		),		
+		'#ajax' => array(
+			'callback' => 'custom_it_cryptonator_change_currency',
+			'wrapper' => 'return_exchange',
+			'method' => 'replace',
+			'effect' => 'fade',
+			'progress' => array(
+				'type' => 'throbber',
+				'message' => '',
+			),
+		),		
+	);
+		
+	$text = '<div id="return_exchange"></div>';
+	$cc = $form['crypto_curr']['#default_value'];
+	$price = custom_it_cryptonator_exchange($cc, $order);
+	$orderAmount = $order->commerce_order_total["und"][0]["amount"];
+	
+	if ($price !== false && $orderAmount != false) {		
+		$orderAmount = ($orderAmount / 100);		
+		$newOrderPrice = round((($orderAmount * (1 + ($procent / 100))) * $price), 4, PHP_ROUND_HALF_UP);
+		$text = '<div id="return_exchange" class="alert alert-info"><div class="row"><div class="col-xs-12 col-md-6"><p class="lead">'.t('The amount of the order in the crypto currency').':</p></div><div class="col-xs-12 col-md-6 text-right"><h2><b>'.$newOrderPrice.' '.$cc.'</b></h2><p class="lead">'.$orderAmount.' '.t('USD').'</p></div></div></div>';		
+		$_SESSION['crypto_curr'] = $cc;		
+	} else {
+		$text = '<div id="return_exchange"><span>'.t('Crypto currency selection error').'!</span></div>';
+		unset($_SESSION['crypto_curr']);
+	}
+   
+	
+	$form['print_receipt'] = array('#markup' => $text);
+	
+	$form['#attached']['css'][] = drupal_get_path('module', 'custom_it_cryptonator') . '/css/custom_it_cryptonator.css';
+	 
+	return $form;
+}
+
+function custom_it_cryptonator_submit_form_validate(&$payment_method, $pane_form, $pane_values, $order, $form_parents = array()) {
+	//TODO: вынести в настройки или какую-то константу и убрать тестовые девятки
+	$curr = array('9999', 'btc', 'blk', 'dash', 'doge', 'emc', 'ltc', 'ppc');
+	if (isset($_SESSION['crypto_curr']) && array_search($_SESSION['crypto_curr'], $curr)) {		
+		return TRUE;
+	} else {
+		form_set_error(implode('][', array_merge($form_parents, array('crypto_curr'))), t('Crypto currency selection error'));
+	}	
+	
+	return FALSE;
+	
+}
+
+function custom_it_cryptonator_change_currency($form, &$form_state) {	
+	global $user;
+	
+	$procent = 15;
+	$order = commerce_cart_order_load($user->uid);
+	$orderAmount = $order->commerce_order_total["und"][0]["amount"];	
+	$cc = $form_state['values']["commerce_payment"]["payment_details"]["crypto_curr"];
+	$price = custom_it_cryptonator_exchange($cc, $order);
+	
+	if ($price !== false && $orderAmount != false) {		
+		$orderAmount = ($orderAmount / 100);		
+		$newOrderPrice = round((($orderAmount * (1 + ($procent / 100))) * $price), 4, PHP_ROUND_HALF_UP);
+		$text = '<div id="return_exchange" class="alert alert-info"><div class="row"><div class="col-xs-12 col-md-6"><p class="lead">'.t('The amount of the order in the crypto currency').':</p></div><div class="col-xs-12 col-md-6 text-right"><h2><b>'.$newOrderPrice.' '.$cc.'</b></h2><p class="lead">'.$orderAmount.' '.t('USD').'</p></div></div></div>';		
+		$_SESSION['crypto_curr'] = $cc;		
+	} else {
+		$text = '<div id="return_exchange"><span>'.t('Failed to get exchange rate').'!</span></div>';
+		unset($_SESSION['crypto_curr']);
+	}
+	return $text;
+}
+
+function custom_it_cryptonator_exchange($curr, $order) {	
+	$payment_method = commerce_payment_method_instance_load("cryptonator|commerce_payment_commerce_payment_cryptonator");		
+	$currency = $payment_method['settings']['currency'];
+	//var_dump($payment_method); exit;
+	$url = "https://api.cryptonator.com/api/ticker/".$currency."-" . $curr;
+	$currData = json_decode(file_get_contents($url));	
+	if (isset($currData->ticker->price)) {		
+		return $currData->ticker->price;
+	} else {
+		return false;
+	}
+}
+
+/**
+ * Payment method callback: redirect form.
+ *
+ * A wrapper around the module's general use function for building a submit form.
+ */
+function custom_it_cryptonator_redirect_form($form, &$form_state, $order, $payment_method) { 	
+	$order->data["invoice"] = NULL;	
+	commerce_order_save($order);
+	//echo "<pre>"; var_dump($order); exit;
+	$wrapper = entity_metadata_wrapper('commerce_order', $order);
+	$curr = false;
+	$price = custom_it_cryptonator_exchange($_SESSION['crypto_curr']);
+	$amount_not_formated = $wrapper->commerce_order_total->amount->value();
+	$cryptoAmount = round(($price * ($amount_not_formated / 100)), 4, PHP_ROUND_HALF_UP);
+	
+	switch ($_SESSION['crypto_curr']) {
+		case "btc": $curr = "bitcoin"; break;
+		case "blk": $curr = "blackcoin"; break;
+		case "dash": $curr = "dash"; break;
+		case "doge": $curr = "dogecoin"; break;
+		case "emc": $curr = "emercoin"; break;
+		case "ltc": $curr = "litecoin"; break;
+		case "ppc": $curr = "peercoin"; break;		
+	}
+	
+	$form['#method'] = 'GET';
+		
+	$dataArr['item_name'] = t('Payment on the site ') . variable_get('site_name', "Default");		
+	$dataArr['order_id'] = $order->order_id;
+	$dataArr['checkout_currency'] = $curr;
+	$dataArr['invoice_amount'] = $cryptoAmount;
+	$dataArr['invoice_currency'] = $curr;
+	$dataArr['success_url'] = $_SERVER["REQUEST_SCHEME"] . "://" . $_SERVER['SERVER_NAME'] . "/crypto/success?order_id=".$order->order_id;
+	$dataArr['failed_url'] = $_SERVER["REQUEST_SCHEME"] . "://" . $_SERVER['SERVER_NAME'] . "/crypto/fail?order_id=".$order->order_id;
+	$dataArr['language'] = $payment_method['settings']['lang'];
+	
+	$m = new MerchantAPI($payment_method['settings']['merchant_id'], $payment_method['settings']['secret']);
+	$r = $m->createInvoice($dataArr);
+	if (isset($r["invoice_id"])) {		
+		$form['#action'] = ' https://www.cryptonator.com/merchant/invoice/'.$r["invoice_id"];
+		$order->data["invoice"] = $r["invoice_id"];
+		commerce_order_save($order);
+	} else {
+		return FALSE;
+	}
+	
+	return $form;
+}
+
+
+/**
+ * Fail page callback handler.
+ */
+function custom_it_cryptonator_fail() {
+	
+	$build = array();	
+	
+	custom_it_cryptonator_custom_checkuot($_GET);	
+	
+	return $build;
+}
+
+/**
+ * Success page callback handler.
+ */
+function custom_it_cryptonator_success() {
+	$build = array();
+    drupal_set_title(t('Successful payment'));
+		
+	custom_it_cryptonator_custom_checkuot($_GET);	
+	
+	return $build;
+}
+
+function custom_it_cryptonator_pay() {
+	
+	$dataPay = $_POST;
+	$order = commerce_order_load($dataPay['order_id']);
+	$payment_method = commerce_payment_method_instance_load($order->data['payment_method']);
+		
+	$m = new MerchantAPI($payment_method['settings']['merchant_id'], $payment_method['settings']['secret']);
+	$result = $m->checkAnswer($dataPay);
+	if ($result === true) {
+		custom_it_cryptonator_custom_checkuot($dataPay);
+	}
+		
+	die();
+}
+
+function custom_it_cryptonator_custom_checkuot($arrRequest) {
+	
+	$arrRequest['pg_order_id'] = $arrRequest['order_id'];
+	$order = commerce_order_load($arrRequest['order_id']); 
+	
+	if (!empty($order) && $order->data["invoice"] !== NULL) {
+		$arrRequest['pg_payment_id'] = $order->data["invoice"];
+		$payment_method = commerce_payment_method_instance_load($order->data['payment_method']);
+		
+		$m = new MerchantAPI($payment_method['settings']['merchant_id'], $payment_method['settings']['secret']);
+		$r = $m->getInvoice($order->data["invoice"]);
+		/*
+			Статусы счета:
+				unpaid – не оплачен
+				confirming - подтверждается
+				paid – оплачен
+				cancelled - отменен
+				mispaid - сумам оплаты меньше суммы счета
+		*/
+		switch ($r["status"]) {
+			case "unpaid":
+			case "confirming":
+				drupal_set_message(t("Invoice not paid yet!"), 'warning');				
+			break;
+			
+			case "cancelled":
+			case "mispaid":
+				$arrRequest['pg_error_description'] = t("Invoice canceled!");
+				drupal_set_message(t($arrRequest['pg_error_description']), 'error');
+				$transaction = db_select('commerce_payment_transaction', 'n')
+					->fields('n', array('status', 'uid'))
+					->condition('order_id', (int) $arrRequest['order_id'])
+					->execute()
+					->fetchAll();
+				if(empty($transaction)){
+					custom_it_cryptonator_create_transaction($arrRequest, COMMERCE_PAYMENT_STATUS_FAILURE);
+				}
+				
+			break;
+			
+			case "paid":				
+				$arrRequest['pg_error_description'] = t("Payment successfully completed");
+				custom_it_cryptonator_create_transaction($arrRequest, COMMERCE_PAYMENT_STATUS_SUCCESS);
+				drupal_set_message(t($arrRequest['pg_error_description']), 'status');
+				drupal_goto('/checkout/'.$arrRequest['order_id'].'/complete');
+			break;
+		}
+		//echo "<pre>"; var_dump($r); exit;
+	}
+	
+	//exit;
+}
+
+function custom_it_cryptonator_create_transaction($arrRequest, $status) {
+	$order = commerce_order_load($arrRequest['pg_order_id']);
+	$payment_method = commerce_payment_method_instance_load($order->data['payment_method']);
+	$wrapper = entity_metadata_wrapper('commerce_order', $arrRequest['pg_order_id']);
+	$amount_not_parsed = $wrapper->commerce_order_total->amount->value();
+	$currency_code = $wrapper->commerce_order_total->currency_code->value();
+
+	$transaction = commerce_payment_transaction_new('cryptonator', $order->order_id);
+	$transaction->instance_id = $payment_method['instance_id'];
+	$transaction->status = $status;
+	$transaction->amount = $amount_not_parsed;
+	$transaction->currency_code = $currency_code;
+	$transaction->remote_id = $arrRequest['pg_payment_id'];
+	$transaction->message_variables = array('@transaction_id' => $arrRequest['pg_payment_id']);
+	if ($status == COMMERCE_PAYMENT_STATUS_SUCCESS) {
+		$transaction->message = 'Transaction accepted with id '.$arrRequest['pg_payment_id'];
+		commerce_payment_transaction_save($transaction);
+		rules_invoke_all('commerce_checkout_complete', $order);
+	} elseif ($status == COMMERCE_PAYMENT_STATUS_FAILURE) {
+		$transaction->message = 'Error for the transaction with id '.$arrRequest['pg_payment_id'].' description '.$arrRequest['pg_error_description'];
+		commerce_payment_transaction_save($transaction);
+		rules_invoke_all('commerce_checkout_complete', $order);
+		$a = db_update('commerce_order')
+            ->fields(array(
+                'status' => 'canceled',
+            ))
+            ->condition('order_id', (int) $arrRequest['pg_order_id'], '=')
+            ->execute();			
+	}
+}
